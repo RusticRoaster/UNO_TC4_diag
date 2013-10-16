@@ -37,7 +37,8 @@
 // -----------------------------------------------------------------------------------------------
 // UNO_TC4_diag Rev.s
 // V0.01 Oct. 15,2013   Stan Gardner creation
-#define BANNER_CAT "UNO_TC4_diag V0.01" // version
+// V0.02 Oct. 16,2013   Stan Gardner added pin toggle test
+#define BANNER_CAT "UNO_TC4_diag V0.02" // version
 
 
 // The user.h file contains user-definable compiler options
@@ -67,6 +68,12 @@
 uint8_t verbose_mode = 0;  //toggle to display extra debug info 
 uint8_t sample_cnt = 0;
 uint8_t i2c_on=0;
+uint8_t Toggle_mode=0;
+uint8_t toggle_pin=0;
+
+//Dont mess with serial port or I2C bus
+#define MAX_PIN 17
+#define MIN_PIN 2
 
 // used by A2, A3 pin change interrupt handler
 volatile int trans_cnt=0;
@@ -112,11 +119,13 @@ ISR(PCINT1_vect){
 
 void display_menu(){
   serialPrintln_P(PSTR(""));
-  serialPrintln_P(PSTR("v = toggle verbose debug mode"));
-  serialPrintln_P(PSTR("V = show program variables"));
   serialPrintln_P(PSTR("1 = test I2C pins, connect A2 to A4,A3 to A5"));
   serialPrintln_P(PSTR("2 = scan I2C bus, open or connect A2 to A4,A3 to A5"));
   serialPrintln_P(PSTR("3 =  I2C Loop Test, connect A2 to A4,A3 to A5"));
+  serialPrintln_P(PSTR("T = pin number to toggle(arduino numbers 2-17 or T enter to reset)"));
+  serialPrintln_P(PSTR("t = toggle pin"));
+  serialPrintln_P(PSTR("v = toggle verbose debug mode"));
+  serialPrintln_P(PSTR("V = show program variables"));
   serialPrintln_P(PSTR("Enter a Letter to run item"));
   return;
 }
@@ -159,6 +168,13 @@ void processCommand() {  // a newline character has been received, so process th
        }
       i2c_loop_test();
       break;
+   case 'T':
+      set_toggle_pin();
+    break;
+  case 't':
+      toggle_pins();
+      break;
+
 
   case 'i':
   case 'l':
@@ -170,11 +186,76 @@ void processCommand() {  // a newline character has been received, so process th
  }
   return;
 }
+
+uint8_t last_toggle = 0;
+void set_toggle_pin(void){
+  int temp_i = 0;
+  if(strlen(command) >= 3){
+    temp_i = atoi(command+2);
+     if((temp_i > MAX_PIN) || (temp_i < MIN_PIN)){
+          serialPrint_P(PSTR("Error, enter a number between  "));
+          Serial.print(MIN_PIN);
+          serialPrint_P(PSTR(" and "));
+          Serial.println(MAX_PIN);          
+     }
+     else{       
+        if(Toggle_mode && toggle_pin)
+          pinMode(toggle_pin,INPUT_PULLUP);  
+        toggle_pin = (uint8_t)temp_i;        
+        last_toggle = 0;
+        Toggle_mode=1;
+        pinMode(toggle_pin,OUTPUT);
+        digitalWrite(toggle_pin,0);                 
+        input_accepted();
+     }
+  }
+  else{
+      last_toggle = 0;
+      Toggle_mode=0;
+      if(toggle_pin){
+        pinMode(toggle_pin,INPUT_PULLUP);
+        serialPrint_P(PSTR("Pin toggle on pin "));
+        Serial.print(toggle_pin);
+        serialPrintln_P(PSTR(" turned Off"));
+      }
+      else{
+        serialPrintln_P(PSTR("Toggle still off"));
+      }
+      toggle_pin=0;      
+  }        
+  return;
+}
+void clear_toggle_flags(){
+      last_toggle = 0;
+      Toggle_mode=0;
+      toggle_pin=0;
+}
+void toggle_pins(void){
+  if(Toggle_mode){
+    serialPrint_P(PSTR("Pin "));
+    if(last_toggle){
+      digitalWrite(toggle_pin,0);
+      Serial.print(toggle_pin);
+        serialPrintln_P(PSTR(" Toggled Off"));
+    }
+    else{
+      digitalWrite(toggle_pin,1);
+      Serial.print(toggle_pin);
+        serialPrintln_P(PSTR(" Toggled On"));
+    }
+    last_toggle = !last_toggle;
+  }
+  else{
+        serialPrintln_P(PSTR(" Toggle Pin not set"));
+  }    
+}
+
 void i2c_loop_test(void){
   int tmp_cnt=0;
   if(!i2c_on){
-      serialPrintln_P(PSTR("I2C scan must be Ran first this test"));
-      return;
+      Wire.begin();
+      i2c_on=1;
+      delay(100);
     }    
       trans_cnt=0;
       PCMSK1 |= (1<<PCINT11);
@@ -214,6 +295,10 @@ void show_variables(void){
   serialPrintln_P(PSTR(" Verbose Debug Mode setting"));
    Serial.print(i2c_on);
   serialPrintln_P(PSTR(" I2C wire services enabled when 1"));
+   Serial.print(Toggle_mode);
+  serialPrintln_P(PSTR(" Toggle pin mode when 1"));
+   Serial.print(toggle_pin);
+  serialPrintln_P(PSTR(" Pin that toggle when toggle mode = 1"));
 
 }
 void serialPrint_P(const prog_char* s)
@@ -295,6 +380,7 @@ void i2c_scanner()
     if (error == 0)
     {
       serialPrint_P(PSTR("I2C device found at address 0x"));
+
       if (address<16)
         serialPrint_P(PSTR("0"));
       Serial.print(address,HEX);
@@ -311,9 +397,9 @@ void i2c_scanner()
   }
   delay(5000);           // wait 5 seconds for next scan
   if (nDevices == 0)
-    serialPrintln_P(PSTR("No I2C devices found\n"));
-  else
-    serialPrintln_P(PSTR("done\n"));
+    serialPrintln_P(PSTR("No I2C devices found"));
+
+  serialPrintln_P(PSTR("Scan done"));
 }
 
 void test_pins(void){
@@ -405,7 +491,6 @@ void checkStatus( uint32_t ms ) { // this is an active delay loop
   while( millis() < tod + ms ) {
   }
 }
-
   
 // ------------------------------------------------------------------------
 // MAIN
