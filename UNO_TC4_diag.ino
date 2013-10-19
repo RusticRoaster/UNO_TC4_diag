@@ -38,7 +38,9 @@
 // UNO_TC4_diag Rev.s
 // V0.01 Oct. 15,2013   Stan Gardner creation
 // V0.02 Oct. 16,2013   Stan Gardner added pin toggle test
-#define BANNER_CAT "UNO_TC4_diag V0.02" // version
+// V0.03 Oct. 16,2013   Stan Gardner added pin to pin loop test
+// V0.04 Oct. 18,2013   Stan Gardner changed toggle pin text
+#define BANNER_CAT "UNO_TC4_diag V0.04" // version
 
 
 // The user.h file contains user-definable compiler options
@@ -74,6 +76,8 @@ uint8_t toggle_pin=0;
 //Dont mess with serial port or I2C bus
 #define MAX_PIN 17
 #define MIN_PIN 2
+
+#define LOOP_BASE_PIN 2
 
 // used by A2, A3 pin change interrupt handler
 volatile int trans_cnt=0;
@@ -122,6 +126,7 @@ void display_menu(){
   serialPrintln_P(PSTR("1 = test I2C pins, connect A2 to A4,A3 to A5"));
   serialPrintln_P(PSTR("2 = scan I2C bus, open or connect A2 to A4,A3 to A5"));
   serialPrintln_P(PSTR("3 =  I2C Loop Test, connect A2 to A4,A3 to A5"));
+  serialPrintln_P(PSTR("l = arduino pin number looped to  arduino pin 2 or L enter to reset)"));
   serialPrintln_P(PSTR("T = pin number to toggle(arduino numbers 2-17 or T enter to reset)"));
   serialPrintln_P(PSTR("t = toggle pin"));
   serialPrintln_P(PSTR("v = toggle verbose debug mode"));
@@ -138,6 +143,17 @@ void processCommand() {  // a newline character has been received, so process th
   int temp_i=0;
 
  switch (command[0]){
+  case 'l':
+      loop_test_pins();
+      break;
+
+   case 'T':
+      set_toggle_pin();
+    break;
+  case 't':
+      toggle_pins();
+      break;
+
   case 'V':
       show_variables();
       break;
@@ -168,16 +184,8 @@ void processCommand() {  // a newline character has been received, so process th
        }
       i2c_loop_test();
       break;
-   case 'T':
-      set_toggle_pin();
-    break;
-  case 't':
-      toggle_pins();
-      break;
-
 
   case 'i':
-  case 'l':
   case 'o':
     serialPrintln_P(PSTR("Not supported"));
   default:
@@ -225,6 +233,71 @@ void set_toggle_pin(void){
   }        
   return;
 }
+
+void loop_test_pins(void){
+  int test_pin = 0,rval=0,error_cnt=0;
+  if(strlen(command) >= 3){
+    test_pin = atoi(command+2);
+     if((test_pin > MAX_PIN) || (test_pin < MIN_PIN+1)){
+          serialPrint_P(PSTR("Error, enter a number between  "));
+          Serial.print(MIN_PIN+1);
+          serialPrint_P(PSTR(" and "));
+          Serial.println(MAX_PIN);          
+     }
+     else{       
+        pinMode(LOOP_BASE_PIN,INPUT_PULLUP);  
+        pinMode(test_pin,INPUT_PULLUP);  
+        rval=digitalRead(LOOP_BASE_PIN);
+        if(!rval){
+          serialPrintln_P(PSTR("Error, Base pin not high"));
+          error_cnt++;
+        }
+        rval=digitalRead(test_pin);
+        if(!rval){
+          serialPrintln_P(PSTR("Error, test pin not high"));
+          error_cnt++;
+        }
+        pinMode(test_pin,OUTPUT);  
+        digitalWrite(test_pin,1);
+        rval=digitalRead(LOOP_BASE_PIN);
+        if(!rval){
+          serialPrintln_P(PSTR("Error2, base pin  not high"));
+          error_cnt++;
+        }
+        digitalWrite(test_pin,0);
+        rval=digitalRead(LOOP_BASE_PIN);
+        if(rval){
+          serialPrintln_P(PSTR("Error, base pin not low"));
+          error_cnt++;
+        }
+
+        pinMode(test_pin,INPUT_PULLUP);  
+        pinMode(LOOP_BASE_PIN,OUTPUT);  
+        digitalWrite(LOOP_BASE_PIN,1);
+        rval=digitalRead(test_pin);
+        if(!rval){
+          serialPrintln_P(PSTR("Error, test input pin not high"));
+          error_cnt++;
+        }
+        digitalWrite(LOOP_BASE_PIN,0);
+        rval=digitalRead(test_pin);
+        if(rval){
+          serialPrintln_P(PSTR("Error, test input pin not high"));
+          error_cnt++;
+        }
+        if(!error_cnt)
+          serialPrintln_P(PSTR("Test passes"));
+        pinMode(LOOP_BASE_PIN,INPUT_PULLUP);  
+        pinMode(test_pin,INPUT_PULLUP);  
+     }
+  }
+  else{
+        input_error();
+        serialPrintln_P(PSTR("Usage: l SingleSpace IntValue"));
+
+  }        
+  return;
+}
 void clear_toggle_flags(){
       last_toggle = 0;
       Toggle_mode=0;
@@ -236,12 +309,12 @@ void toggle_pins(void){
     if(last_toggle){
       digitalWrite(toggle_pin,0);
       Serial.print(toggle_pin);
-        serialPrintln_P(PSTR(" Toggled Off"));
+        serialPrintln_P(PSTR(" Toggled Low"));
     }
     else{
       digitalWrite(toggle_pin,1);
       Serial.print(toggle_pin);
-        serialPrintln_P(PSTR(" Toggled On"));
+        serialPrintln_P(PSTR(" Toggled High"));
     }
     last_toggle = !last_toggle;
   }
@@ -502,7 +575,6 @@ void setup()
   Serial.begin(BAUD);
   delay(500);
   serialPrintln_P(PSTR(BANNER_CAT));
-//  Wire.begin(); 
 
   display_menu();
 
@@ -511,10 +583,24 @@ void setup()
   nextLoop = 2000;
   reftime = 0.001 * nextLoop; // initialize reftime to the time of first sample
   first = true;
+  pinMode(A0,INPUT_PULLUP);
+  pinMode(A1,INPUT_PULLUP);
   pinMode(A2,INPUT_PULLUP);
   pinMode(A3,INPUT_PULLUP);
-  
-//MCUCR = (1<<ISC01) | (1<<ISC00);
+
+  pinMode(2,INPUT_PULLUP);
+  pinMode(3,INPUT_PULLUP);
+  pinMode(4,INPUT_PULLUP);
+  pinMode(5,INPUT_PULLUP);
+  pinMode(6,INPUT_PULLUP);
+  pinMode(7,INPUT_PULLUP);
+
+  pinMode(8,INPUT_PULLUP);
+  pinMode(9,INPUT_PULLUP);
+  pinMode(10,INPUT_PULLUP);
+  pinMode(11,INPUT_PULLUP);
+  pinMode(12,INPUT_PULLUP);
+  //led on 13  
 }
 
 // -----------------------------------------------------------------
